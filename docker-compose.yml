@@ -1,0 +1,53 @@
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: rw_postgres
+    environment:
+      POSTGRES_USER: rwuser
+      POSTGRES_PASSWORD: rwpassword
+      POSTGRES_DB: realtimeworkspace
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rwuser -d realtimeworkspace"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: rw_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: rw_rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: rwuser
+      RABBITMQ_DEFAULT_PASS: rwpassword
+    ports:
+      - "5672:5672"    # AMQP protocol port
+      - "15672:15672"  # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:
