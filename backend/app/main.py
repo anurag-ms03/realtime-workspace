@@ -5,6 +5,7 @@ import redis
 
 from app.core.config import settings
 from app.db.session import engine
+from app.api.v1.router import api_router
 
 app = FastAPI(
     title="Realtime Workspace API",
@@ -21,14 +22,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(api_router)
+
 @app.on_event("startup")
 async def startup_event():
-    # Verify PostgreSQL
     with engine.connect() as conn:
         conn.execute(text("SELECT 1"))
     print("✅ PostgreSQL connected")
 
-    # Verify Redis
     r = redis.from_url(settings.REDIS_URL)
     r.ping()
     print("✅ Redis connected")
