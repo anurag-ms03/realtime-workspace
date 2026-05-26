@@ -10,6 +10,20 @@ engine = create_engine(
     max_overflow=20,
 )
 
+from app.models.user import User
+from app.models.workspace import (
+    Workspace,
+    WorkspaceMember,
+    Project,
+    Task,
+    AuditLog,
+)
+
+__all__ = ["User", "Workspace", "WorkspaceMember", "Project", "Task", "AuditLog"]
+
+
+
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 class Base(DeclarativeBase):
