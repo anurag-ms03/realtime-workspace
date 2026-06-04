@@ -1,7 +1,11 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
-
 from app.core.config import settings
+
+
+class Base(DeclarativeBase):
+    pass
+
 
 engine = create_engine(
     settings.DATABASE_URL,
@@ -10,24 +14,8 @@ engine = create_engine(
     max_overflow=20,
 )
 
-from app.models.user import User
-from app.models.workspace import (
-    Workspace,
-    WorkspaceMember,
-    Project,
-    Task,
-    AuditLog,
-)
-
-__all__ = ["User", "Workspace", "WorkspaceMember", "Project", "Task", "AuditLog"]
-
-
-
-
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-class Base(DeclarativeBase):
-    pass
 
 def get_db():
     db = SessionLocal()

@@ -10,7 +10,7 @@ from app.core.config import settings
 from app.db.session import Base
 
 # Import all models so Alembic can detect them
-from app.models import user  # noqa
+import app.models  # noqa — registers all models with Base.metadata # noqa
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
