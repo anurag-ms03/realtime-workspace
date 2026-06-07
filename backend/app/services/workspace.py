@@ -2,9 +2,18 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional, List, Tuple
 from uuid import UUID
-
+import asyncio
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
+
+from app.events import publish_event, TaskCreatedEvent, TaskCreatedPayload
+
+from datetime import datetime
+from app.events import (
+    publish_event,
+    TaskUpdatedEvent, TaskUpdatedPayload,
+    TaskCompletedEvent, TaskCompletedPayload,
+)
 
 from app.models.workspace import (
     Workspace, WorkspaceMember, Project, Task, AuditLog,
@@ -18,13 +27,15 @@ from app.schemas.workspace import (
 )
 
 
+import json
+
 def _audit(db, user_id, entity_type, entity_id, action, changes=None, ip=None):
     log = AuditLog(
         user_id=user_id,
         entity_type=entity_type,
         entity_id=str(entity_id),
         action=action,
-        changes=changes,
+        changes=json.dumps(changes) if changes else None,
         ip_address=ip,
     )
     db.add(log)
@@ -219,7 +230,26 @@ def create_task(db: Session, workspace_id: UUID, project_id: UUID,
            {"title": data.title, "project_id": str(project_id)}, ip)
     db.commit()
     db.refresh(task)
+
+    # ── Publish event ──────────────────────────────────────────────────────
+    asyncio.get_event_loop().run_until_complete(
+        publish_event(TaskCreatedEvent(
+            payload=TaskCreatedPayload(
+                task_id=str(task.id),
+                project_id=str(task.project_id),
+                workspace_id=str(workspace_id),
+                title=task.title,
+                status=task.status.value,
+                priority=task.priority.value,
+                created_by=str(current_user.id),
+                assignee_id=str(task.assignee_id) if task.assignee_id else None,
+                due_date=task.due_date,
+            )
+        ))
+    )
+
     return task
+   
 
 
 def list_tasks(db: Session, workspace_id: UUID, project_id: UUID,
@@ -256,14 +286,48 @@ def update_task(db: Session, workspace_id: UUID, project_id: UUID,
     for field, value in data.model_dump(exclude_unset=True).items():
         changes[field] = {"old": str(getattr(task, field)), "new": str(value)}
         setattr(task, field, value)
+
+    just_completed = False
     if data.status == TaskStatus.done and task.completed_at is None:
         task.completed_at = datetime.utcnow()
+        just_completed = True
     elif data.status and data.status != TaskStatus.done:
         task.completed_at = None
+
     task.updated_at = datetime.utcnow()
     _audit(db, current_user.id, "task", task_id, "updated", changes, ip)
     db.commit()
     db.refresh(task)
+
+    # ── Publish TaskUpdated (always) ───────────────────────────────────────
+    asyncio.get_event_loop().run_until_complete(
+        publish_event(TaskUpdatedEvent(
+            payload=TaskUpdatedPayload(
+                task_id=str(task.id),
+                project_id=str(task.project_id),
+                workspace_id=str(workspace_id),
+                updated_by=str(current_user.id),
+                changes=changes,
+            )
+        ))
+    )
+
+    # ── Publish TaskCompleted (only when status just flipped to done) ──────
+    if just_completed:
+        asyncio.get_event_loop().run_until_complete(
+            publish_event(TaskCompletedEvent(
+                payload=TaskCompletedPayload(
+                    task_id=str(task.id),
+                    project_id=str(task.project_id),
+                    workspace_id=str(workspace_id),
+                    title=task.title,
+                    completed_by=str(current_user.id),
+                    completed_at=task.completed_at,
+                    assignee_id=str(task.assignee_id) if task.assignee_id else None,
+                )
+            ))
+        )
+
     return task
 
 
