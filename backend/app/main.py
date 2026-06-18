@@ -6,6 +6,10 @@ from app.core.config import settings
 from app.db.session import engine
 from app.api.v1.router import api_router
 from app.events import rabbitmq_manager, declare_topology  # ← ADD
+from app.events.consumer_runner import start_consumers, stop_consumers
+import logging
+logging.basicConfig(level=logging.INFO)
+
 
 app = FastAPI(
     title="Realtime Workspace API",
@@ -37,13 +41,19 @@ async def startup_event():
     r.ping()
     print("✅ Redis connected")
 
-    # ── RabbitMQ ───────────────────────────────────────────────────────────
-    await rabbitmq_manager.connect()       # ← ADD
-    await declare_topology()               # ← ADD
+    try:
+        await rabbitmq_manager.connect()
+        await declare_topology()
+        await start_consumers()
+        print("✅ RabbitMQ connected")
+    except Exception as e:
+        print(f"❌ RabbitMQ startup failed: {e}")
+        raise
 
 
 @app.on_event("shutdown")
 async def shutdown_event():                # ← ADD entire handler
+    await stop_consumers()
     await rabbitmq_manager.disconnect()
 
 
