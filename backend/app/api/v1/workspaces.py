@@ -132,15 +132,13 @@ def delete_project(workspace_id: UUID, project_id: UUID, request: Request,
 
 
 # ── Tasks ─────────────────────────────────────────────────────────────────────
-
 @router.post("/{workspace_id}/projects/{project_id}/tasks",
              response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
-def create_task(workspace_id: UUID, project_id: UUID, data: TaskCreate,
+async def create_task(workspace_id: UUID, project_id: UUID, data: TaskCreate,
                 request: Request, db: Session = Depends(get_db),
                 current_user: User = Depends(get_current_user)):
-    return svc.create_task(db, workspace_id, project_id, data,
+    return await svc.create_task(db, workspace_id, project_id, data,
                            current_user, _ip(request))
-
 
 @router.get("/{workspace_id}/projects/{project_id}/tasks",
             response_model=PaginatedResponse)
@@ -168,16 +166,14 @@ def get_task(workspace_id: UUID, project_id: UUID, task_id: UUID,
              current_user: User = Depends(get_current_user)):
     return svc.get_task(db, workspace_id, project_id, task_id, current_user)
 
-
 @router.patch("/{workspace_id}/projects/{project_id}/tasks/{task_id}",
               response_model=TaskResponse)
-def update_task(workspace_id: UUID, project_id: UUID, task_id: UUID,
+async def update_task(workspace_id: UUID, project_id: UUID, task_id: UUID,
                 data: TaskUpdate, request: Request,
                 db: Session = Depends(get_db),
                 current_user: User = Depends(get_current_user)):
-    return svc.update_task(db, workspace_id, project_id, task_id, data,
+    return await svc.update_task(db, workspace_id, project_id, task_id, data,
                            current_user, _ip(request))
-
 
 @router.delete("/{workspace_id}/projects/{project_id}/tasks/{task_id}",
                status_code=status.HTTP_204_NO_CONTENT)

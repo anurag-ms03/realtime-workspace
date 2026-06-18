@@ -3,8 +3,40 @@ from datetime import datetime
 from typing import Optional, List, Tuple
 from uuid import UUID
 import asyncio
+import json
+
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
+
+from app.events import (
+    publish_event,
+    TaskCreatedEvent, TaskCreatedPayload,
+    TaskUpdatedEvent, TaskUpdatedPayload,
+    TaskCompletedEvent, TaskCompletedPayload,
+)
+from app.models.workspace import (
+    Workspace, WorkspaceMember, Project, Task, AuditLog,
+    WorkspaceRole, TaskStatus,
+)
+from app.models.user import User
+from app.schemas.workspace import (
+    WorkspaceCreate, WorkspaceUpdate,
+    ProjectCreate, ProjectUpdate,
+    TaskCreate, TaskUpdate,
+)
+
+
+# Module-level: capture the main event loop at import time (runs in main thread)
+_main_loop: asyncio.AbstractEventLoop = None
+
+def _set_main_loop(loop: asyncio.AbstractEventLoop):
+    global _main_loop
+    _main_loop = loop
+
+def _get_main_loop() -> asyncio.AbstractEventLoop:
+    if _main_loop is None:
+        raise RuntimeError("Main event loop not registered. Call _set_main_loop() at startup.")
+    return _main_loop
 
 from app.events import publish_event, TaskCreatedEvent, TaskCreatedPayload
 
@@ -216,7 +248,7 @@ def delete_project(db: Session, workspace_id: UUID, project_id: UUID,
 
 # ── Task ──────────────────────────────────────────────────────────────────────
 
-def create_task(db: Session, workspace_id: UUID, project_id: UUID,
+async def create_task(db: Session, workspace_id: UUID, project_id: UUID,
                 data: TaskCreate, current_user: User, ip=None) -> Task:
     project = get_project(db, workspace_id, project_id, current_user)
     task = Task(project_id=project.id, title=data.title,
@@ -231,25 +263,21 @@ def create_task(db: Session, workspace_id: UUID, project_id: UUID,
     db.commit()
     db.refresh(task)
 
-    # ── Publish event ──────────────────────────────────────────────────────
-    asyncio.get_event_loop().run_until_complete(
-        publish_event(TaskCreatedEvent(
-            payload=TaskCreatedPayload(
-                task_id=str(task.id),
-                project_id=str(task.project_id),
-                workspace_id=str(workspace_id),
-                title=task.title,
-                status=task.status.value,
-                priority=task.priority.value,
-                created_by=str(current_user.id),
-                assignee_id=str(task.assignee_id) if task.assignee_id else None,
-                due_date=task.due_date,
-            )
-        ))
-    )
+    await publish_event(TaskCreatedEvent(
+        payload=TaskCreatedPayload(
+            task_id=str(task.id),
+            project_id=str(task.project_id),
+            workspace_id=str(workspace_id),
+            title=task.title,
+            status=task.status.value,
+            priority=task.priority.value,
+            created_by=str(current_user.id),
+            assignee_id=str(task.assignee_id) if task.assignee_id else None,
+            due_date=task.due_date,
+        )
+    ))
 
     return task
-   
 
 
 def list_tasks(db: Session, workspace_id: UUID, project_id: UUID,
@@ -278,7 +306,7 @@ def get_task(db: Session, workspace_id: UUID, project_id: UUID,
     return task
 
 
-def update_task(db: Session, workspace_id: UUID, project_id: UUID,
+async def update_task(db: Session, workspace_id: UUID, project_id: UUID,
                 task_id: UUID, data: TaskUpdate,
                 current_user: User, ip=None) -> Task:
     task = get_task(db, workspace_id, project_id, task_id, current_user)
@@ -299,34 +327,28 @@ def update_task(db: Session, workspace_id: UUID, project_id: UUID,
     db.commit()
     db.refresh(task)
 
-    # ── Publish TaskUpdated (always) ───────────────────────────────────────
-    asyncio.get_event_loop().run_until_complete(
-        publish_event(TaskUpdatedEvent(
-            payload=TaskUpdatedPayload(
+    await publish_event(TaskUpdatedEvent(
+        payload=TaskUpdatedPayload(
+            task_id=str(task.id),
+            project_id=str(task.project_id),
+            workspace_id=str(workspace_id),
+            updated_by=str(current_user.id),
+            changes=changes,
+        )
+    ))
+
+    if just_completed:
+        await publish_event(TaskCompletedEvent(
+            payload=TaskCompletedPayload(
                 task_id=str(task.id),
                 project_id=str(task.project_id),
                 workspace_id=str(workspace_id),
-                updated_by=str(current_user.id),
-                changes=changes,
+                title=task.title,
+                completed_by=str(current_user.id),
+                completed_at=task.completed_at,
+                assignee_id=str(task.assignee_id) if task.assignee_id else None,
             )
         ))
-    )
-
-    # ── Publish TaskCompleted (only when status just flipped to done) ──────
-    if just_completed:
-        asyncio.get_event_loop().run_until_complete(
-            publish_event(TaskCompletedEvent(
-                payload=TaskCompletedPayload(
-                    task_id=str(task.id),
-                    project_id=str(task.project_id),
-                    workspace_id=str(workspace_id),
-                    title=task.title,
-                    completed_by=str(current_user.id),
-                    completed_at=task.completed_at,
-                    assignee_id=str(task.assignee_id) if task.assignee_id else None,
-                )
-            ))
-        )
 
     return task
 
