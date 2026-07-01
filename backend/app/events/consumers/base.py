@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 import aio_pika
 from aio_pika.abc import AbstractIncomingMessage
 from app.events import exchanges as ex
+from app.events.idempotency import is_duplicate
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,11 @@ class BaseConsumer(ABC):
                 f"[{self.queue_name}] Received event | "
                 f"type={event_type} id={event_id} retry={retry_count}"
             )
+            
+             # ── Idempotency check ──────────────────────────────────────────
+            if await is_duplicate(event_id, self.queue_name):
+                await message.ack()   # ack so it leaves the queue
+                return                # skip processing entirely
 
             await self.handle_event(event_type, body)
             await message.ack()
