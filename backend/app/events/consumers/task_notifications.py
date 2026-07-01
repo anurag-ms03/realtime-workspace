@@ -15,6 +15,9 @@ class TaskNotificationsConsumer(BaseConsumer):
 
     async def handle_event(self, event_type: str, body: dict) -> None:
         payload = body.get("payload", {})
+        
+        if payload.get("title") == "FAIL_TEST":
+            raise RuntimeError("Simulated failure for DLQ testing")
 
         if event_type == "task.created":
             logger.info(

@@ -21,3 +21,11 @@ DLX_EXCHANGE               = "dead.letter.exchange"
 DLQ_TASK_NOTIFICATIONS     = "dlq.task.notifications"
 DLQ_TASK_AUDIT             = "dlq.task.audit"
 DLQ_TASK_ANALYTICS         = "dlq.task.analytics"
+
+# ── Retry delay queues (NEW) ───────────────────────────────────────────────
+RETRY_EXCHANGE             = "retry.exchange"      # direct exchange
+RETRY_DELAYS_MS            = [2_000, 4_000, 8_000] # 2s, 4s, 8s
+
+def retry_queue_name(source_queue: str, attempt: int) -> str:
+    """e.g. retry.task.notifications.1"""
+    return f"retry.{source_queue}.{attempt}"

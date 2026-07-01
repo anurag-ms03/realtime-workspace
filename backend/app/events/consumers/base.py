@@ -1,21 +1,14 @@
 import json
 import logging
 from abc import ABC, abstractmethod
-from typing import Optional
 import aio_pika
 from aio_pika.abc import AbstractIncomingMessage
-from app.events.schemas import EventBase
+from app.events import exchanges as ex
 
 logger = logging.getLogger(__name__)
 
 
 class BaseConsumer(ABC):
-    """
-    Base class for all event consumers.
-    Handles ack/nack, retry counting, and DLQ routing automatically.
-    Subclasses just implement handle_event().
-    """
-
     MAX_RETRIES = 3
     queue_name: str = ""
 
@@ -62,28 +55,35 @@ class BaseConsumer(ABC):
         retry_count: int,
         error: Exception,
     ) -> None:
-        if retry_count < self.MAX_RETRIES:
-            # Requeue with incremented retry count
-            await self._channel.default_exchange.publish(
+        next_retry = retry_count + 1
+
+        if next_retry < self.MAX_RETRIES:
+            delay_ms = ex.RETRY_DELAYS_MS[retry_count]  # 2s, 4s, 8s
+            delay_queue = ex.retry_queue_name(self.queue_name, next_retry)
+
+            # Publish to delay queue — it will TTL back to original queue
+            retry_exchange = await self._channel.get_exchange(ex.RETRY_EXCHANGE)
+            await retry_exchange.publish(
                 aio_pika.Message(
                     body=message.body,
                     content_type="application/json",
                     delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
                     headers={
                         **dict(message.headers),
-                        "x-retry-count": retry_count + 1,
-                        "x-last-error": str(error),
+                        "x-retry-count": next_retry,
+                        "x-last-error":  str(error),
                     },
                 ),
-                routing_key=self.queue_name,
+                routing_key=delay_queue,
             )
-            await message.ack()  # ack original, we republished with new headers
+            await message.ack()
             logger.warning(
-                f"[{self.queue_name}] Requeued for retry "
-                f"{retry_count + 1}/{self.MAX_RETRIES}"
+                f"[{self.queue_name}] Retry {next_retry}/{self.MAX_RETRIES} "
+                f"scheduled in {delay_ms}ms via {delay_queue}"
             )
+
         else:
-            # Max retries exceeded → let DLX handle it via nack
+            # Max retries exceeded → DLQ via nack
             await message.nack(requeue=False)
             logger.error(
                 f"[{self.queue_name}] Max retries exceeded → sending to DLQ"
@@ -91,5 +91,4 @@ class BaseConsumer(ABC):
 
     @abstractmethod
     async def handle_event(self, event_type: str, body: dict) -> None:
-        """Subclasses implement this. Raise any exception to trigger retry."""
         ...
