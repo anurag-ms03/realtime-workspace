@@ -51,6 +51,8 @@ class LoginRequest(BaseModel):
     email: EmailStr
     password: str
 
+class MessageResponse(BaseModel):
+    message: str
 
 class RefreshRequest(BaseModel):
     refresh_token: str
