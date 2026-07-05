@@ -56,3 +56,13 @@ class MessageResponse(BaseModel):
 
 class RefreshRequest(BaseModel):
     refresh_token: str
+    
+class VerifyEmailRequest(BaseModel):
+    token: str
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+    
+class ForgotPasswordRequest(BaseModel):
+    email: str

@@ -5,9 +5,13 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Annotated
 from app.api.deps import get_db, get_current_user
 from app.schemas.user import (
-    UserCreate, UserResponse, TokenResponse, LoginRequest, RefreshRequest, MessageResponse
+    UserCreate, UserResponse, TokenResponse, LoginRequest, RefreshRequest, MessageResponse, VerifyEmailRequest, ResetPasswordRequest, ForgotPasswordRequest
 )
-from app.services.user import create_user, get_user_by_email
+from app.services.user import (
+    create_user, get_user_by_email,
+    verify_user_email, request_password_reset, reset_user_password
+)
+
 from app.core.security import (
     verify_password, create_access_token, create_refresh_token, decode_token, get_token_remaining_ttl
 )
@@ -74,6 +78,44 @@ def logout(
         if jti:
             blacklist_token(jti, ttl)
     return MessageResponse(message="Successfully logged out")
+
+# ── Email verification ─────────────────────────────────────────────────────
+
+@router.post("/resend-verification", response_model=MessageResponse)
+def resend_verification(current_user: User = Depends(get_current_user)):
+    if current_user.is_verified:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already verified",
+        )
+    from app.core.verification import create_verification_token
+    from app.core.email import send_verification_email
+    token = create_verification_token(str(current_user.id))
+    send_verification_email(current_user.email, token)
+    return MessageResponse(message="Verification email sent")
+
+
+
+
+@router.post("/verify-email", response_model=MessageResponse)
+def verify_email(request: VerifyEmailRequest, db: Session = Depends(get_db)):
+    verify_user_email(db, request.token)
+    return MessageResponse(message="Email verified successfully")
+
+
+
+@router.post("/forgot-password", response_model=MessageResponse)
+def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    request_password_reset(db, request.email)
+    return MessageResponse(
+        message="If that email exists, a reset link has been sent"
+    )
+
+
+@router.post("/reset-password", response_model=MessageResponse)
+def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db)):
+    reset_user_password(db, request.token, request.new_password)
+    return MessageResponse(message="Password reset successfully")
 
 @router.get("/me", response_model=UserResponse)
 def get_me(current_user: User = Depends(get_current_user)):
