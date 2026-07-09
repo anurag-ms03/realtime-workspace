@@ -7,6 +7,7 @@ from app.db.session import engine
 from app.api.v1.router import api_router
 from app.events import rabbitmq_manager, declare_topology  # ← ADD
 from app.events.consumer_runner import start_consumers, stop_consumers
+from app.ws.router import router as ws_router
 import logging
 logging.basicConfig(level=logging.INFO)
 
@@ -27,7 +28,7 @@ app.add_middleware(
 )
 
 app.include_router(api_router)
-
+app.include_router(ws_router)
 
 @app.on_event("startup")
 async def startup_event():
