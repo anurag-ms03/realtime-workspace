@@ -4,7 +4,7 @@ from app.models.user import User
 from app.schemas.user import UserCreate
 from app.core.security import hash_password
 from app.core.verification import create_verification_token, verify_email_token
-from app.core.email import send_verification_email
+from app.workers.email_tasks import send_verification_email_task, send_password_reset_email_task
 
 
 def get_user_by_email(db: Session, email: str):
@@ -41,9 +41,9 @@ def create_user(db: Session, user_data: UserCreate) -> User:
     db.commit()
     db.refresh(user)
 
-    # ── Send verification email ────────────────────────────────────────────
+    # ── Send verification email (async via Celery) ─────────────────────────
     token = create_verification_token(str(user.id))
-    send_verification_email(user.email, token)
+    send_verification_email_task.delay(user.email, token)
 
     return user
 
@@ -81,12 +81,11 @@ def request_password_reset(db: Session, email: str) -> None:
     Always returns success even if email not found — prevents user enumeration.
     """
     from app.core.verification import create_reset_token
-    from app.core.email import send_password_reset_email
 
     user = get_user_by_email(db, email)
     if user:
         token = create_reset_token(str(user.id))
-        send_password_reset_email(user.email, token)
+        send_password_reset_email_task.delay(user.email, token)
 
 
 def reset_user_password(db: Session, token: str, new_password: str) -> None:

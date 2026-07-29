@@ -89,9 +89,9 @@ def resend_verification(current_user: User = Depends(get_current_user)):
             detail="Email already verified",
         )
     from app.core.verification import create_verification_token
-    from app.core.email import send_verification_email
+    from app.workers.email_tasks import send_verification_email_task
     token = create_verification_token(str(current_user.id))
-    send_verification_email(current_user.email, token)
+    send_verification_email_task.delay(current_user.email, token)
     return MessageResponse(message="Verification email sent")
 
 
